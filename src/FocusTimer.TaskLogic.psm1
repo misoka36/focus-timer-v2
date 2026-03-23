@@ -36,12 +36,15 @@ function Normalize-TaskOrder {
     )
 
     $orderedTasks = @(Get-OrderedTasks -Tasks $Tasks)
+    $activeTasks = @($orderedTasks | Where-Object { $_.status -ne 'Done' })
+    $completedTasks = @($orderedTasks | Where-Object { $_.status -eq 'Done' })
+    $normalizedTasks = @($activeTasks + $completedTasks)
 
-    for ($index = 0; $index -lt $orderedTasks.Count; $index++) {
-        $orderedTasks[$index].order = $index + 1
+    for ($index = 0; $index -lt $normalizedTasks.Count; $index++) {
+        $normalizedTasks[$index].order = $index + 1
     }
 
-    @($orderedTasks)
+    @($normalizedTasks)
 }
 
 function New-TaskItem {
@@ -85,8 +88,28 @@ function Add-TaskItem {
     )
 
     $currentTasks = @(Get-OrderedTasks -Tasks $Tasks)
-    $newTask = New-TaskItem -Title $Title -Order ($currentTasks.Count + 1) -Now $Now
-    @(Normalize-TaskOrder -Tasks (@($currentTasks) + $newTask))
+    $activeTasks = @($currentTasks | Where-Object { $_.status -ne 'Done' })
+    $completedTasks = @($currentTasks | Where-Object { $_.status -eq 'Done' })
+    $newTask = New-TaskItem -Title $Title -Order ($activeTasks.Count + 1) -Now $Now
+    @(Normalize-TaskOrder -Tasks (@($activeTasks) + $newTask + $completedTasks))
+}
+
+function Get-ActiveTasks {
+    param(
+        [AllowNull()]
+        [object[]]$Tasks
+    )
+
+    @(Get-OrderedTasks -Tasks $Tasks | Where-Object { $_.status -ne 'Done' })
+}
+
+function Get-CompletedTasks {
+    param(
+        [AllowNull()]
+        [object[]]$Tasks
+    )
+
+    @(Get-OrderedTasks -Tasks $Tasks | Where-Object { $_.status -eq 'Done' })
 }
 
 function Get-SelectedTask {
@@ -114,9 +137,11 @@ function Set-TaskStatus {
     )
 
     $updated = $false
+    $previousStatus = $null
 
     foreach ($task in @($Tasks)) {
         if ($task.id -eq $TaskId) {
+            $previousStatus = $task.status
             $task.status = $Status
             $task.updated_at = $Now
             $updated = $true
@@ -126,6 +151,17 @@ function Set-TaskStatus {
 
     if (-not $updated) {
         throw "Task not found: $TaskId"
+    }
+
+    $orderedTasks = @(Get-OrderedTasks -Tasks $Tasks)
+    $targetTask = @($orderedTasks | Where-Object { $_.id -eq $TaskId })[0]
+
+    if ($Status -eq 'Done') {
+        $targetTask.order = $orderedTasks.Count + 1
+    }
+    elseif ($previousStatus -eq 'Done' -and $Status -ne 'Done') {
+        $activeTasks = @($orderedTasks | Where-Object { $_.status -ne 'Done' -and $_.id -ne $TaskId })
+        $targetTask.order = $activeTasks.Count + 1
     }
 
     @(Normalize-TaskOrder -Tasks $Tasks)
@@ -144,8 +180,10 @@ function Move-TaskItem {
         [datetime]$Now = (Get-Date)
     )
 
+    $activeTaskList = @(Get-ActiveTasks -Tasks $Tasks)
+    $completedTasks = @(Get-CompletedTasks -Tasks $Tasks)
     $orderedTasks = [System.Collections.ArrayList]::new()
-    foreach ($task in (Get-OrderedTasks -Tasks $Tasks)) {
+    foreach ($task in $activeTaskList) {
         [void]$orderedTasks.Add($task)
     }
 
@@ -183,7 +221,7 @@ function Move-TaskItem {
         $orderedTasks[$index].updated_at = $Now
     }
 
-    @($orderedTasks)
+    @(Normalize-TaskOrder -Tasks (@($orderedTasks) + $completedTasks))
 }
 
 function Get-TaskIndex {
@@ -275,8 +313,54 @@ function Move-TaskToBottom {
     Move-TaskItem -Tasks $orderedTasks -TaskId $TaskId -TargetIndex ($orderedTasks.Count - 1) -Now $Now
 }
 
+function Toggle-TaskStopped {
+    param(
+        [AllowNull()]
+        [object[]]$Tasks,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TaskId,
+
+        [datetime]$Now = (Get-Date)
+    )
+
+    $task = @(Get-OrderedTasks -Tasks $Tasks | Where-Object { $_.id -eq $TaskId })[0]
+    if (-not $task) {
+        throw "Task not found: $TaskId"
+    }
+
+    switch ($task.status) {
+        'Normal' {
+            Set-TaskStatus -Tasks $Tasks -TaskId $TaskId -Status 'Stopped' -Now $Now
+        }
+        'Stopped' {
+            Set-TaskStatus -Tasks $Tasks -TaskId $TaskId -Status 'Normal' -Now $Now
+        }
+        default {
+            throw "Task cannot be toggled from status: $($task.status)"
+        }
+    }
+}
+
+function Complete-TaskItem {
+    param(
+        [AllowNull()]
+        [object[]]$Tasks,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TaskId,
+
+        [datetime]$Now = (Get-Date)
+    )
+
+    Set-TaskStatus -Tasks $Tasks -TaskId $TaskId -Status 'Done' -Now $Now
+}
+
 Export-ModuleMember -Function @(
     'Add-TaskItem',
+    'Complete-TaskItem',
+    'Get-ActiveTasks',
+    'Get-CompletedTasks',
     'Get-OrderedTasks',
     'Get-SelectedTask',
     'Move-TaskDown',
@@ -286,7 +370,8 @@ Export-ModuleMember -Function @(
     'Move-TaskUp',
     'New-TaskItem',
     'Normalize-TaskOrder',
-    'Set-TaskStatus'
+    'Set-TaskStatus',
+    'Toggle-TaskStopped'
 )
 
 

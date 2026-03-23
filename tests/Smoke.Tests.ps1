@@ -20,6 +20,7 @@
         ($output -match '"control_probe":true') | Should Be $true
         ($output -match '"clickable_symbols":true') | Should Be $true
         ($output -match '"flat_button_styles":true') | Should Be $true
+        ($output -match '"task_manager_layout":true') | Should Be $true
     }
 
     It 'adds a task through the task window event handler' {
@@ -35,6 +36,23 @@
         ($output -match '"task_count":1') | Should Be $true
         ($output -match '"saved_count":1') | Should Be $true
         ($output -match '"first_task":"Smoke Task"') | Should Be $true
+        ($output -match '"input_cleared":true') | Should Be $true
+    }
+
+    It 'adds a task through the enter key path' {
+        $projectRoot = Split-Path -Parent $PSScriptRoot
+        $scriptPath = Join-Path -Path $projectRoot -ChildPath 'focus-timer.ps1'
+        $dataRoot = Join-Path -Path $TestDrive -ChildPath 'task-add-enter-smoke'
+        New-Item -Path $dataRoot -ItemType Directory -Force | Out-Null
+
+        $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath -TaskAddByEnterSmokeTest -DataRoot $dataRoot
+
+        $LASTEXITCODE | Should Be 0
+        ($output -match '"ok":true') | Should Be $true
+        ($output -match '"handled":true') | Should Be $true
+        ($output -match '"task_count":1') | Should Be $true
+        ($output -match '"saved_count":1') | Should Be $true
+        ($output -match '"first_task":"Enter Task"') | Should Be $true
         ($output -match '"input_cleared":true') | Should Be $true
     }
 

@@ -3,6 +3,7 @@ param(
     [switch]$SmokeTest,
     [switch]$UiSmokeTest,
     [switch]$TaskAddSmokeTest,
+    [switch]$TaskAddByEnterSmokeTest,
     [switch]$TaskMoveSmokeTest,
     [string]$DataRoot
 )
@@ -52,7 +53,8 @@ $script:timerState = New-TimerState
 $script:tasks = @(Read-FocusTimerTasks -BaseDirectory $script:baseDirectory)
 $script:lastFocusedTaskId = $null
 $script:taskWindow = $null
-$script:taskListBox = $null
+$script:activeTasksItemsControl = $null
+$script:completedTasksItemsControl = $null
 $script:taskInputBox = $null
 
 function Convert-BoolToVisibility {
@@ -274,7 +276,6 @@ function Update-MainWindow {
     $uiState = Get-TimerUiState -State $script:timerState
 
     $script:TimeText.Text = Get-TimerDisplayText -State $script:timerState
-    $script:StatusText.Text = Get-TimerStatusText -State $script:timerState
     $script:TaskText.Text = Get-TaskDisplayText
 
     $script:MeterArc.Stroke = $meterColor
@@ -315,66 +316,23 @@ function Update-MainWindow {
     $script:FocusBreakButton.ToolTip = '5分休憩'
 }
 
-function Refresh-TaskListBox {
-    param(
-        [string]$PreferredTaskId
-    )
-
-    if (-not $script:taskListBox) {
-        return
+function Refresh-TaskViews {
+    if ($script:activeTasksItemsControl) {
+        $script:activeTasksItemsControl.ItemsSource = $null
+        $script:activeTasksItemsControl.ItemsSource = @(Get-ActiveTasks -Tasks $script:tasks)
     }
 
-    $selectedId = $null
-    if ($script:taskListBox.SelectedItem) {
-        $selectedId = $script:taskListBox.SelectedItem.id
-    }
-
-    $ordered = @(Get-OrderedTasks -Tasks $script:tasks)
-    $script:taskListBox.ItemsSource = $null
-    $script:taskListBox.ItemsSource = $ordered
-
-    if (-not $selectedId -and $PreferredTaskId) {
-        $selectedId = $PreferredTaskId
-    }
-
-    if ($selectedId) {
-        foreach ($item in $ordered) {
-            if ($item.id -eq $selectedId) {
-                $script:taskListBox.SelectedItem = $item
-                break
-            }
-        }
+    if ($script:completedTasksItemsControl) {
+        $script:completedTasksItemsControl.ItemsSource = $null
+        $script:completedTasksItemsControl.ItemsSource = @(Get-CompletedTasks -Tasks $script:tasks)
     }
 }
 
 function Handle-TaskCollectionChanged {
-    param(
-        [string]$PreferredTaskId
-    )
-
     Save-Tasks
-    Refresh-TaskListBox -PreferredTaskId $PreferredTaskId
+    Refresh-TaskViews
     Update-MainWindow
     Sync-FocusTaskSelection -Reason 'task_change'
-}
-
-function Set-TaskWindowStatus {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Status
-    )
-
-    if (-not $script:taskListBox) {
-        return
-    }
-
-    $selectedTask = $script:taskListBox.SelectedItem
-    if (-not $selectedTask) {
-        return
-    }
-
-    $script:tasks = Set-TaskStatus -Tasks $script:tasks -TaskId $selectedTask.id -Status $Status -Now (Get-Date)
-    Handle-TaskCollectionChanged -PreferredTaskId $selectedTask.id
 }
 
 function Submit-TaskInput {
@@ -392,13 +350,28 @@ function Submit-TaskInput {
     Handle-TaskCollectionChanged
 }
 
-function Invoke-TaskMoveAction {
+function Handle-TaskInputKeyDown {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Key
+    )
+
+    $keyName = [string]$Key
+    if ($keyName -in @('Enter', 'Return')) {
+        Submit-TaskInput
+        return $true
+    }
+
+    $false
+}
+
+function Invoke-TaskRowAction {
     param(
         [Parameter(Mandatory = $true)]
         [string]$TaskId,
 
         [Parameter(Mandatory = $true)]
-        [ValidateSet('move_to_top', 'move_up', 'move_down', 'move_to_bottom')]
+        [ValidateSet('move_to_top', 'move_up', 'move_down', 'move_to_bottom', 'toggle_stopped', 'complete_task')]
         [string]$Action
     )
 
@@ -417,9 +390,15 @@ function Invoke-TaskMoveAction {
         'move_to_bottom' {
             $script:tasks = Move-TaskToBottom -Tasks $script:tasks -TaskId $TaskId -Now $now
         }
+        'toggle_stopped' {
+            $script:tasks = Toggle-TaskStopped -Tasks $script:tasks -TaskId $TaskId -Now $now
+        }
+        'complete_task' {
+            $script:tasks = Complete-TaskItem -Tasks $script:tasks -TaskId $TaskId -Now $now
+        }
     }
 
-    Handle-TaskCollectionChanged -PreferredTaskId $TaskId
+    Handle-TaskCollectionChanged
 }
 
 function Get-ButtonFromRoutedSource {
@@ -451,7 +430,7 @@ function Get-TaskWindowXaml {
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Task Manager"
         Width="520"
-        Height="520"
+        Height="620"
         ResizeMode="CanResize"
         Background="#FFF9F6EE"
         WindowStartupLocation="CenterScreen">
@@ -478,6 +457,13 @@ function Get-TaskWindowXaml {
           </ControlTemplate>
         </Setter.Value>
       </Setter>
+    </Style>
+
+    <Style x:Key="TaskSectionTitleStyle" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="#FF8B5E34" />
+      <Setter Property="Margin" Value="2,0,0,0" />
     </Style>
 
     <Style x:Key="TaskModernIconButtonStyle" TargetType="Button">
@@ -541,50 +527,81 @@ function Get-TaskWindowXaml {
       <Setter Property="BorderBrush" Value="#00FFFFFF" />
     </Style>
 
-    <Style x:Key="TaskStatusButtonStyle"
+    <Style x:Key="TaskToggleButtonStyle"
            TargetType="Button"
            BasedOn="{StaticResource TaskModernIconButtonStyle}">
-      <Setter Property="Width" Value="56" />
-      <Setter Property="Height" Value="36" />
-      <Setter Property="Margin" Value="0,0,8,8" />
+      <Setter Property="Width" Value="34" />
+      <Setter Property="Height" Value="30" />
+      <Setter Property="Margin" Value="0,0,4,4" />
       <Setter Property="FontSize" Value="15" />
+      <Setter Property="Content" Value="⏸" />
+      <Setter Property="ToolTip" Value="停止" />
+      <Setter Property="Foreground" Value="#FF8A5A12" />
+      <Setter Property="Background" Value="#FFFFF1DE" />
+      <Setter Property="BorderBrush" Value="#00FFFFFF" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding status}" Value="Stopped">
+          <Setter Property="Content" Value="▶" />
+          <Setter Property="ToolTip" Value="再開" />
+          <Setter Property="Foreground" Value="#FF1C655C" />
+          <Setter Property="Background" Value="#FFE3F5EF" />
+        </DataTrigger>
+      </Style.Triggers>
     </Style>
 
-    <Style x:Key="TaskListItemStyle" TargetType="ListBoxItem">
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="Margin" Value="0" />
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="ListBoxItem">
-            <Border x:Name="ItemShell"
-                    Background="Transparent"
-                    CornerRadius="16"
-                    Padding="0">
-              <ContentPresenter />
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="ItemShell" Property="Background" Value="#10E4B16D" />
-              </Trigger>
-              <Trigger Property="IsSelected" Value="True">
-                <Setter TargetName="ItemShell" Property="Background" Value="#1CD08A38" />
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
+    <Style x:Key="TaskCompleteButtonStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource TaskModernIconButtonStyle}">
+      <Setter Property="Width" Value="34" />
+      <Setter Property="Height" Value="30" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="Content" Value="✔" />
+      <Setter Property="ToolTip" Value="完了" />
+      <Setter Property="Foreground" Value="#FF1F6F43" />
+      <Setter Property="Background" Value="#FFE6F5E8" />
+      <Setter Property="BorderBrush" Value="#00FFFFFF" />
     </Style>
+
+    <Style x:Key="ActiveTaskTitleStyle" TargetType="TextBlock">
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Foreground" Value="#FF2E2520" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding status}" Value="Stopped">
+          <Setter Property="Foreground" Value="#FF8F877B" />
+          <Setter Property="Opacity" Value="0.74" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style x:Key="CompletedTaskTitleStyle" TargetType="TextBlock">
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Foreground" Value="#FF766E64" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <Style x:Key="TaskListHostStyle" TargetType="Border">
+      <Setter Property="Background" Value="#66FFF7EB" />
+      <Setter Property="BorderBrush" Value="#00FFFFFF" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="Padding" Value="10" />
+    </Style>
+
   </Window.Resources>
   <Grid Margin="16">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="12" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="8" />
       <RowDefinition Height="*" />
       <RowDefinition Height="12" />
       <RowDefinition Height="Auto" />
+      <RowDefinition Height="8" />
+      <RowDefinition Height="150" />
     </Grid.RowDefinitions>
 
     <StackPanel Grid.Row="0" Orientation="Horizontal">
@@ -598,90 +615,99 @@ function Get-TaskWindowXaml {
               Style="{StaticResource TaskAddButtonStyle}" />
     </StackPanel>
 
-    <ListBox x:Name="TaskListBox"
-             Grid.Row="2"
-             BorderThickness="0"
-             Background="#00FFFFFF"
-             ItemContainerStyle="{StaticResource TaskListItemStyle}">
-      <ListBox.ItemTemplate>
-        <DataTemplate>
-          <Border Background="#FFFFFBF4"
-                  BorderBrush="#FFF0E1CE"
-                  BorderThickness="1"
-                  CornerRadius="16"
-                  Margin="0,0,0,8"
-                  Padding="12">
-            <Grid>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-              </Grid.ColumnDefinitions>
+    <TextBlock Grid.Row="2"
+               Text="Active"
+               Style="{StaticResource TaskSectionTitleStyle}" />
 
-              <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                <TextBlock Text="{Binding title}"
-                           TextWrapping="Wrap"
-                           Foreground="#FF2E2520"
-                           FontSize="14"
-                           FontWeight="SemiBold" />
-                <TextBlock Text="{Binding status}"
-                           Foreground="#FF8B5E34"
-                           FontWeight="Bold"
-                           FontSize="11"
-                           Margin="0,6,0,0" />
-              </StackPanel>
+    <Border Grid.Row="4" Style="{StaticResource TaskListHostStyle}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <ItemsControl x:Name="ActiveTasksItemsControl">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Background="#FFFFFBF4"
+                      BorderBrush="#FFF0E1CE"
+                      BorderThickness="1"
+                      CornerRadius="16"
+                      Margin="0,0,0,8"
+                      Padding="12">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
 
-              <WrapPanel Grid.Column="1" VerticalAlignment="Center">
-                <Button Tag="move_to_top"
-                        CommandParameter="{Binding id}"
-                        Content="⏫"
-                        ToolTip="一番上へ"
-                        Style="{StaticResource TaskMoveButtonStyle}" />
-                <Button Tag="move_up"
-                        CommandParameter="{Binding id}"
-                        Content="▲"
-                        ToolTip="上へ"
-                        Style="{StaticResource TaskMoveButtonStyle}" />
-                <Button Tag="move_down"
-                        CommandParameter="{Binding id}"
-                        Content="▼"
-                        ToolTip="下へ"
-                        Style="{StaticResource TaskMoveButtonStyle}" />
-                <Button Tag="move_to_bottom"
-                        CommandParameter="{Binding id}"
-                        Content="⏬"
-                        ToolTip="一番下へ"
-                        Margin="0,0,0,4"
-                        Style="{StaticResource TaskMoveButtonStyle}" />
-              </WrapPanel>
-            </Grid>
-          </Border>
-        </DataTemplate>
-      </ListBox.ItemTemplate>
-    </ListBox>
+                  <TextBlock Grid.Column="0"
+                             Margin="0,0,12,0"
+                             Text="{Binding title}"
+                             Style="{StaticResource ActiveTaskTitleStyle}" />
 
-    <WrapPanel Grid.Row="4">
-      <Button x:Name="NormalStatusButton"
-              Content="◉"
-              ToolTip="通常にする"
-              Foreground="#FF1C655C"
-              Background="#FFE3F5EF"
-              BorderBrush="#00FFFFFF"
-              Style="{StaticResource TaskStatusButtonStyle}" />
-      <Button x:Name="StoppedStatusButton"
-              Content="⏸"
-              ToolTip="停止にする"
-              Foreground="#FF8A5A12"
-              Background="#FFFFF1DE"
-              BorderBrush="#00FFFFFF"
-              Style="{StaticResource TaskStatusButtonStyle}" />
-      <Button x:Name="DoneStatusButton"
-              Content="✔"
-              ToolTip="完了にする"
-              Foreground="#FF1F6F43"
-              Background="#FFE6F5E8"
-              BorderBrush="#00FFFFFF"
-              Style="{StaticResource TaskStatusButtonStyle}" />
-    </WrapPanel>
+                  <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                    <Button Tag="move_to_top"
+                            CommandParameter="{Binding id}"
+                            Content="⏫"
+                            ToolTip="一番上へ"
+                            Style="{StaticResource TaskMoveButtonStyle}" />
+                    <Button Tag="move_up"
+                            CommandParameter="{Binding id}"
+                            Content="▲"
+                            ToolTip="上へ"
+                            Style="{StaticResource TaskMoveButtonStyle}" />
+                    <Button Tag="move_down"
+                            CommandParameter="{Binding id}"
+                            Content="▼"
+                            ToolTip="下へ"
+                            Style="{StaticResource TaskMoveButtonStyle}" />
+                    <Button Tag="move_to_bottom"
+                            CommandParameter="{Binding id}"
+                            Content="⏬"
+                            ToolTip="一番下へ"
+                            Style="{StaticResource TaskMoveButtonStyle}" />
+                    <Button Tag="toggle_stopped"
+                            CommandParameter="{Binding id}"
+                            Style="{StaticResource TaskToggleButtonStyle}" />
+                    <Button Tag="complete_task"
+                            CommandParameter="{Binding id}"
+                            Style="{StaticResource TaskCompleteButtonStyle}" />
+                  </WrapPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Border>
+
+    <TextBlock Grid.Row="6"
+               Text="Completed"
+               Style="{StaticResource TaskSectionTitleStyle}" />
+
+    <Border Grid.Row="8" Style="{StaticResource TaskListHostStyle}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <ItemsControl x:Name="CompletedTasksItemsControl">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Background="#FFF6F2EA"
+                      BorderBrush="#00FFFFFF"
+                      BorderThickness="1"
+                      CornerRadius="16"
+                      Margin="0,0,0,8"
+                      Padding="12">
+                <DockPanel>
+                  <TextBlock Text="✔"
+                             Foreground="#FF1F6F43"
+                             FontSize="13"
+                             FontWeight="Bold"
+                             Margin="0,0,8,0"
+                             DockPanel.Dock="Left" />
+                  <TextBlock Text="{Binding title}"
+                             Style="{StaticResource CompletedTaskTitleStyle}" />
+                </DockPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Border>
   </Grid>
 </Window>
 "@
@@ -694,32 +720,24 @@ function Open-TaskWindow {
     }
 
     $script:taskWindow = New-WpfWindowFromXaml -Xaml (Get-TaskWindowXaml)
-    $script:taskListBox = $script:taskWindow.FindName('TaskListBox')
+    $script:activeTasksItemsControl = $script:taskWindow.FindName('ActiveTasksItemsControl')
+    $script:completedTasksItemsControl = $script:taskWindow.FindName('CompletedTasksItemsControl')
     $script:taskInputBox = $script:taskWindow.FindName('TaskInput')
     $addTaskButton = $script:taskWindow.FindName('AddTaskButton')
-    $normalStatusButton = $script:taskWindow.FindName('NormalStatusButton')
-    $stoppedStatusButton = $script:taskWindow.FindName('StoppedStatusButton')
-    $doneStatusButton = $script:taskWindow.FindName('DoneStatusButton')
 
-    Refresh-TaskListBox
+    Refresh-TaskViews
 
     $addTaskButton.Add_Click({
         Submit-TaskInput
     })
 
-    $normalStatusButton.Add_Click({
-        Set-TaskWindowStatus -Status 'Normal'
+    $script:taskInputBox.Add_KeyDown({
+        if (Handle-TaskInputKeyDown -Key $_.Key) {
+            $_.Handled = $true
+        }
     })
 
-    $stoppedStatusButton.Add_Click({
-        Set-TaskWindowStatus -Status 'Stopped'
-    })
-
-    $doneStatusButton.Add_Click({
-        Set-TaskWindowStatus -Status 'Done'
-    })
-
-    $script:taskListBox.AddHandler(
+    $script:activeTasksItemsControl.AddHandler(
         [System.Windows.Controls.Button]::ClickEvent,
         [System.Windows.RoutedEventHandler]{
             param($sender, $eventArgs)
@@ -739,14 +757,15 @@ function Open-TaskWindow {
                 return
             }
 
-            Invoke-TaskMoveAction -TaskId $taskId -Action $action
+            Invoke-TaskRowAction -TaskId $taskId -Action $action
             $eventArgs.Handled = $true
         }
     )
 
     $script:taskWindow.Add_Closed({
         $script:taskWindow = $null
-        $script:taskListBox = $null
+        $script:activeTasksItemsControl = $null
+        $script:completedTasksItemsControl = $null
         $script:taskInputBox = $null
     })
 
@@ -828,10 +847,7 @@ $mainWindowXaml = @"
       <ColumnDefinition Width="*" />
     </Grid.ColumnDefinitions>
 
-    <Border Grid.Column="0"
-            Background="#D91E293B"
-            Padding="10"
-            CornerRadius="40">
+    <StackPanel Grid.Column="0" VerticalAlignment="Center">
       <Grid Width="72" Height="72">
         <Ellipse Stroke="#33FFFFFF" StrokeThickness="8" />
         <Ellipse x:Name="MeterFullCircle" StrokeThickness="8" Visibility="Collapsed" />
@@ -848,27 +864,8 @@ $mainWindowXaml = @"
                    FontWeight="Bold"
                    Text="00:00" />
       </Grid>
-    </Border>
 
-    <StackPanel Grid.Column="2" VerticalAlignment="Center">
-      <Border Background="#D91E293B" CornerRadius="16" Padding="12" Margin="0,0,0,10">
-        <StackPanel>
-          <TextBlock x:Name="StatusText"
-                     Text="待機中"
-                     Foreground="#FFB8F2E6"
-                     FontSize="11"
-                     FontWeight="Bold" />
-          <TextBlock x:Name="TaskText"
-                     Text="表示対象のタスクはありません"
-                     Foreground="White"
-                     FontSize="14"
-                     Margin="0,4,0,0"
-                     Width="280"
-                     TextWrapping="Wrap" />
-        </StackPanel>
-      </Border>
-
-      <WrapPanel>
+      <WrapPanel Margin="0,12,0,0" HorizontalAlignment="Center">
         <Button x:Name="PlayButton"
                 Content="▶"
                 ToolTip="再生"
@@ -886,12 +883,6 @@ $mainWindowXaml = @"
                 ToolTip="リセット"
                 Background="#2FC8666A"
                 BorderBrush="#00C8666A"
-                Style="{StaticResource FloatingFlatButtonStyle}" />
-        <Button x:Name="OpenTasksButton"
-                Content="☰"
-                ToolTip="タスク管理"
-                Background="#2F4B7ED1"
-                BorderBrush="#004B7ED1"
                 Style="{StaticResource FloatingFlatButtonStyle}" />
         <Button x:Name="FocusChoiceButton"
                 Content="🎯"
@@ -916,6 +907,35 @@ $mainWindowXaml = @"
                 Style="{StaticResource FloatingFlatButtonStyle}" />
       </WrapPanel>
     </StackPanel>
+
+    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+      <Border Background="#D91E293B" CornerRadius="18" Padding="12">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <TextBlock x:Name="TaskText"
+                     Grid.Column="0"
+                     Text="表示対象のタスクはありません"
+                     Foreground="White"
+                     FontSize="14"
+                     Width="228"
+                     VerticalAlignment="Center"
+                     Margin="0,0,12,0"
+                     TextWrapping="Wrap" />
+
+          <Button x:Name="OpenTasksButton"
+                  Grid.Column="1"
+                  Content="☰"
+                  ToolTip="タスク管理"
+                  Background="#2F4B7ED1"
+                  BorderBrush="#004B7ED1"
+                  Style="{StaticResource FloatingFlatButtonStyle}" />
+        </Grid>
+      </Border>
+    </StackPanel>
   </Grid>
 </Window>
 "@
@@ -924,7 +944,6 @@ $script:mainWindow = New-WpfWindowFromXaml -Xaml $mainWindowXaml
 $script:MeterArc = $script:mainWindow.FindName('MeterArc')
 $script:MeterFullCircle = $script:mainWindow.FindName('MeterFullCircle')
 $script:TimeText = $script:mainWindow.FindName('TimeText')
-$script:StatusText = $script:mainWindow.FindName('StatusText')
 $script:TaskText = $script:mainWindow.FindName('TaskText')
 $script:PlayButton = $script:mainWindow.FindName('PlayButton')
 $script:PauseButton = $script:mainWindow.FindName('PauseButton')
@@ -1004,7 +1023,8 @@ if ($UiSmokeTest) {
         task_title          = $taskWindowProbe.Title
         control_probe       = @(
             [bool]$script:mainWindow.FindName('PlayButton'),
-            [bool]$taskWindowProbe.FindName('TaskListBox')
+            [bool]$taskWindowProbe.FindName('ActiveTasksItemsControl'),
+            [bool]$taskWindowProbe.FindName('CompletedTasksItemsControl')
         ) -notcontains $false
         clickable_symbols   = @(
             ([string]$script:PlayButton.Content -eq '▶'),
@@ -1015,9 +1035,8 @@ if ($UiSmokeTest) {
             ([string]$script:IdleBreakChoiceButton.Content -eq '☕'),
             ([string]$script:FocusBreakButton.Content -eq '☕'),
             $taskWindowXaml.Contains('Content="➕"'),
-            $taskWindowXaml.Contains('Content="◉"'),
-            $taskWindowXaml.Contains('Content="⏸"'),
-            $taskWindowXaml.Contains('Content="✔"'),
+            $taskWindowXaml.Contains('Tag="toggle_stopped"'),
+            $taskWindowXaml.Contains('Tag="complete_task"'),
             $taskWindowXaml.Contains('⏫'),
             $taskWindowXaml.Contains('▲'),
             $taskWindowXaml.Contains('▼'),
@@ -1031,6 +1050,13 @@ if ($UiSmokeTest) {
             -not $taskWindowXaml.Contains('DropShadowEffect'),
             -not $mainWindowXaml.Contains('TopSheen'),
             -not $taskWindowXaml.Contains('TopSheen')
+        ) -notcontains $false
+        task_manager_layout = @(
+            -not $mainWindowXaml.Contains('StatusText'),
+            -not $taskWindowXaml.Contains('NormalStatusButton'),
+            -not $taskWindowXaml.Contains('StoppedStatusButton'),
+            -not $taskWindowXaml.Contains('DoneStatusButton'),
+            $taskWindowXaml.Contains('CompletedTasksItemsControl')
         ) -notcontains $false
     } | ConvertTo-Json -Compress
 
@@ -1062,6 +1088,27 @@ if ($TaskAddSmokeTest) {
     return
 }
 
+if ($TaskAddByEnterSmokeTest) {
+    Open-TaskWindow
+    $script:taskInputBox.Text = 'Enter Task'
+    $handled = Handle-TaskInputKeyDown -Key 'Enter'
+
+    $reloadedTasks = @(Read-FocusTimerTasks -BaseDirectory $script:baseDirectory)
+
+    [pscustomobject]@{
+        ok             = $true
+        handled        = $handled
+        task_count     = @($script:tasks).Count
+        saved_count    = $reloadedTasks.Count
+        first_task     = if (@($script:tasks).Count -gt 0) { $script:tasks[0].title } else { $null }
+        input_cleared  = [string]::IsNullOrEmpty($script:taskInputBox.Text)
+    } | ConvertTo-Json -Compress
+
+    $script:taskWindow.Close()
+    $script:mainWindow.Close()
+    return
+}
+
 if ($TaskMoveSmokeTest) {
     $seedTime = Get-Date '2026-03-23T10:00:00'
     $script:tasks = @(
@@ -1071,7 +1118,7 @@ if ($TaskMoveSmokeTest) {
     )
 
     Open-TaskWindow
-    Invoke-TaskMoveAction -TaskId '3' -Action 'move_to_top'
+    Invoke-TaskRowAction -TaskId '3' -Action 'move_to_top'
 
     [pscustomobject]@{
         ok          = $true

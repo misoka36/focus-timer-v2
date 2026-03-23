@@ -14,6 +14,20 @@ Describe 'FocusTimer.TaskLogic' {
         $tasks[1].order | Should Be 2
     }
 
+    It 'adds a new task before completed tasks' {
+        $now = Get-Date '2026-03-23T10:00:00'
+        $tasks = @(
+            (New-TaskItem -Title 'Task A' -Order 1 -Status Normal -Now $now -Id '1'),
+            (New-TaskItem -Title 'Task Done' -Order 2 -Status Done -Now $now -Id '2')
+        )
+
+        $updated = Add-TaskItem -Tasks $tasks -Title 'Task B' -Now $now
+
+        $updated[0].title | Should Be 'Task A'
+        $updated[1].title | Should Be 'Task B'
+        $updated[2].title | Should Be 'Task Done'
+    }
+
     It 'selects the topmost normal task only' {
         $now = Get-Date '2026-03-23T10:00:00'
         $tasks = @(
@@ -97,9 +111,41 @@ Describe 'FocusTimer.TaskLogic' {
 
         $updated = Set-TaskStatus -Tasks $tasks -TaskId '1' -Status Done -Now $now
         $selectedTask = Get-SelectedTask -Tasks $updated
+        $updatedTask = @($updated | Where-Object { $_.id -eq '1' })[0]
 
-        $updated[0].status | Should Be 'Done'
+        $updatedTask.status | Should Be 'Done'
         $selectedTask.id | Should Be '2'
+    }
+
+    It 'toggles a task between normal and stopped' {
+        $now = Get-Date '2026-03-23T10:00:00'
+        $tasks = @(
+            (New-TaskItem -Title 'Task A' -Order 1 -Status Normal -Now $now -Id '1')
+        )
+
+        $stopped = Toggle-TaskStopped -Tasks $tasks -TaskId '1' -Now $now
+
+        $stopped[0].status | Should Be 'Stopped'
+
+        $resumed = Toggle-TaskStopped -Tasks $stopped -TaskId '1' -Now $now
+        $resumed[0].status | Should Be 'Normal'
+    }
+
+    It 'moves a completed task to the completed list' {
+        $now = Get-Date '2026-03-23T10:00:00'
+        $tasks = @(
+            (New-TaskItem -Title 'Task A' -Order 1 -Status Normal -Now $now -Id '1'),
+            (New-TaskItem -Title 'Task B' -Order 2 -Status Normal -Now $now -Id '2')
+        )
+
+        $completed = Complete-TaskItem -Tasks $tasks -TaskId '1' -Now $now
+        $activeTasks = @(Get-ActiveTasks -Tasks $completed)
+        $doneTasks = @(Get-CompletedTasks -Tasks $completed)
+
+        $activeTasks.Count | Should Be 1
+        $activeTasks[0].title | Should Be 'Task B'
+        $doneTasks.Count | Should Be 1
+        $doneTasks[0].title | Should Be 'Task A'
     }
 }
 
