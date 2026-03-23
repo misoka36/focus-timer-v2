@@ -1,7 +1,10 @@
 ﻿[CmdletBinding()]
 param(
     [switch]$SmokeTest,
-    [switch]$UiSmokeTest
+    [switch]$UiSmokeTest,
+    [switch]$TaskAddSmokeTest,
+    [switch]$TaskMoveSmokeTest,
+    [string]$DataRoot
 )
 
 Set-StrictMode -Version Latest
@@ -15,16 +18,22 @@ Import-Module (Join-Path -Path $moduleRoot -ChildPath 'FocusTimer.TaskLogic.psm1
 Import-Module (Join-Path -Path $moduleRoot -ChildPath 'FocusTimer.Storage.psm1') -Force
 Import-Module (Join-Path -Path $moduleRoot -ChildPath 'FocusTimer.Toast.psm1') -Force
 
-Initialize-FocusTimerStorage -BaseDirectory $scriptRoot
+$resolvedDataRoot = if ([string]::IsNullOrWhiteSpace($DataRoot)) {
+    $scriptRoot
+}
+else {
+    $DataRoot
+}
 
 if ($SmokeTest) {
     $state = New-TimerState
-    $tasks = Read-FocusTimerTasks -BaseDirectory $scriptRoot
+    Initialize-FocusTimerStorage -BaseDirectory $resolvedDataRoot
+    $tasks = Read-FocusTimerTasks -BaseDirectory $resolvedDataRoot
     [pscustomobject]@{
         ok             = $true
         mode           = $state.Mode
         task_count     = @($tasks).Count
-        data_directory = Get-FocusTimerDataDirectory -BaseDirectory $scriptRoot
+        data_directory = Get-FocusTimerDataDirectory -BaseDirectory $resolvedDataRoot
     } | ConvertTo-Json -Compress
     return
 }
@@ -38,13 +47,13 @@ Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName System.Xaml
 
-$script:baseDirectory = $scriptRoot
+$script:baseDirectory = $resolvedDataRoot
 $script:timerState = New-TimerState
 $script:tasks = @(Read-FocusTimerTasks -BaseDirectory $script:baseDirectory)
 $script:lastFocusedTaskId = $null
 $script:taskWindow = $null
 $script:taskListBox = $null
-$script:taskDragStart = $null
+$script:taskInputBox = $null
 
 function Convert-BoolToVisibility {
     param(
@@ -300,6 +309,10 @@ function Update-MainWindow {
 }
 
 function Refresh-TaskListBox {
+    param(
+        [string]$PreferredTaskId
+    )
+
     if (-not $script:taskListBox) {
         return
     }
@@ -313,6 +326,10 @@ function Refresh-TaskListBox {
     $script:taskListBox.ItemsSource = $null
     $script:taskListBox.ItemsSource = $ordered
 
+    if (-not $selectedId -and $PreferredTaskId) {
+        $selectedId = $PreferredTaskId
+    }
+
     if ($selectedId) {
         foreach ($item in $ordered) {
             if ($item.id -eq $selectedId) {
@@ -324,8 +341,12 @@ function Refresh-TaskListBox {
 }
 
 function Handle-TaskCollectionChanged {
+    param(
+        [string]$PreferredTaskId
+    )
+
     Save-Tasks
-    Refresh-TaskListBox
+    Refresh-TaskListBox -PreferredTaskId $PreferredTaskId
     Update-MainWindow
     Sync-FocusTaskSelection -Reason 'task_change'
 }
@@ -346,7 +367,75 @@ function Set-TaskWindowStatus {
     }
 
     $script:tasks = Set-TaskStatus -Tasks $script:tasks -TaskId $selectedTask.id -Status $Status -Now (Get-Date)
+    Handle-TaskCollectionChanged -PreferredTaskId $selectedTask.id
+}
+
+function Submit-TaskInput {
+    if (-not $script:taskInputBox) {
+        return
+    }
+
+    $title = $script:taskInputBox.Text
+    if ([string]::IsNullOrWhiteSpace($title)) {
+        return
+    }
+
+    $script:tasks = Add-TaskItem -Tasks $script:tasks -Title $title -Now (Get-Date)
+    $script:taskInputBox.Text = ''
     Handle-TaskCollectionChanged
+}
+
+function Invoke-TaskMoveAction {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TaskId,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('move_to_top', 'move_up', 'move_down', 'move_to_bottom')]
+        [string]$Action
+    )
+
+    $now = Get-Date
+
+    switch ($Action) {
+        'move_to_top' {
+            $script:tasks = Move-TaskToTop -Tasks $script:tasks -TaskId $TaskId -Now $now
+        }
+        'move_up' {
+            $script:tasks = Move-TaskUp -Tasks $script:tasks -TaskId $TaskId -Now $now
+        }
+        'move_down' {
+            $script:tasks = Move-TaskDown -Tasks $script:tasks -TaskId $TaskId -Now $now
+        }
+        'move_to_bottom' {
+            $script:tasks = Move-TaskToBottom -Tasks $script:tasks -TaskId $TaskId -Now $now
+        }
+    }
+
+    Handle-TaskCollectionChanged -PreferredTaskId $TaskId
+}
+
+function Get-ButtonFromRoutedSource {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Source
+    )
+
+    $current = $Source
+
+    while ($current) {
+        if ($current -is [System.Windows.Controls.Button]) {
+            return $current
+        }
+
+        if (-not ($current -is [System.Windows.DependencyObject])) {
+            return $null
+        }
+
+        $current = [System.Windows.Media.VisualTreeHelper]::GetParent($current)
+    }
+
+    $null
 }
 
 function Get-TaskWindowXaml {
@@ -354,7 +443,7 @@ function Get-TaskWindowXaml {
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Task Manager"
-        Width="420"
+        Width="520"
         Height="520"
         ResizeMode="CanResize"
         Background="#FFF9F6EE"
@@ -376,8 +465,7 @@ function Get-TaskWindowXaml {
     <ListBox x:Name="TaskListBox"
              Grid.Row="2"
              BorderThickness="0"
-             Background="#00FFFFFF"
-             AllowDrop="True">
+             Background="#00FFFFFF">
       <ListBox.ItemTemplate>
         <DataTemplate>
           <Border Background="#FFF1E9D8"
@@ -386,17 +474,76 @@ function Get-TaskWindowXaml {
                   CornerRadius="10"
                   Margin="0,0,0,8"
                   Padding="10">
-            <DockPanel>
-              <TextBlock Text="{Binding status}"
-                         Foreground="#FF8B5E34"
-                         FontWeight="Bold"
-                         DockPanel.Dock="Right" />
-              <TextBlock Text="{Binding title}"
-                         TextWrapping="Wrap"
-                         Foreground="#FF2E2520"
-                         FontSize="14"
-                         Margin="0,0,10,0" />
-            </DockPanel>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+
+              <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                <TextBlock Text="{Binding title}"
+                           TextWrapping="Wrap"
+                           Foreground="#FF2E2520"
+                           FontSize="14"
+                           FontWeight="SemiBold" />
+                <TextBlock Text="{Binding status}"
+                           Foreground="#FF8B5E34"
+                           FontWeight="Bold"
+                           FontSize="11"
+                           Margin="0,6,0,0" />
+              </StackPanel>
+
+              <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                <Button Tag="move_to_top"
+                        CommandParameter="{Binding id}"
+                        Content="⏫"
+                        ToolTip="一番上へ"
+                        Width="30"
+                        Height="28"
+                        Margin="0,0,4,4"
+                        FontFamily="Segoe UI Symbol"
+                        FontSize="14"
+                        Foreground="#FF6C4B1F"
+                        Background="#FFFFF7EB"
+                        BorderBrush="#FFDBB27E" />
+                <Button Tag="move_up"
+                        CommandParameter="{Binding id}"
+                        Content="▲"
+                        ToolTip="上へ"
+                        Width="30"
+                        Height="28"
+                        Margin="0,0,4,4"
+                        FontFamily="Segoe UI Symbol"
+                        FontSize="13"
+                        Foreground="#FF6C4B1F"
+                        Background="#FFFFF7EB"
+                        BorderBrush="#FFDBB27E" />
+                <Button Tag="move_down"
+                        CommandParameter="{Binding id}"
+                        Content="▼"
+                        ToolTip="下へ"
+                        Width="30"
+                        Height="28"
+                        Margin="0,0,4,4"
+                        FontFamily="Segoe UI Symbol"
+                        FontSize="13"
+                        Foreground="#FF6C4B1F"
+                        Background="#FFFFF7EB"
+                        BorderBrush="#FFDBB27E" />
+                <Button Tag="move_to_bottom"
+                        CommandParameter="{Binding id}"
+                        Content="⏬"
+                        ToolTip="一番下へ"
+                        Width="30"
+                        Height="28"
+                        Margin="0,0,0,4"
+                        FontFamily="Segoe UI Symbol"
+                        FontSize="14"
+                        Foreground="#FF6C4B1F"
+                        Background="#FFFFF7EB"
+                        BorderBrush="#FFDBB27E" />
+              </WrapPanel>
+            </Grid>
           </Border>
         </DataTemplate>
       </ListBox.ItemTemplate>
@@ -420,7 +567,7 @@ function Open-TaskWindow {
 
     $script:taskWindow = New-WpfWindowFromXaml -Xaml (Get-TaskWindowXaml)
     $script:taskListBox = $script:taskWindow.FindName('TaskListBox')
-    $taskInput = $script:taskWindow.FindName('TaskInput')
+    $script:taskInputBox = $script:taskWindow.FindName('TaskInput')
     $addTaskButton = $script:taskWindow.FindName('AddTaskButton')
     $normalStatusButton = $script:taskWindow.FindName('NormalStatusButton')
     $stoppedStatusButton = $script:taskWindow.FindName('StoppedStatusButton')
@@ -429,13 +576,7 @@ function Open-TaskWindow {
     Refresh-TaskListBox
 
     $addTaskButton.Add_Click({
-        if ([string]::IsNullOrWhiteSpace($taskInput.Text)) {
-            return
-        }
-
-        $script:tasks = Add-TaskItem -Tasks $script:tasks -Title $taskInput.Text -Now (Get-Date)
-        $taskInput.Text = ''
-        Handle-TaskCollectionChanged
+        Submit-TaskInput
     })
 
     $normalStatusButton.Add_Click({
@@ -450,79 +591,52 @@ function Open-TaskWindow {
         Set-TaskWindowStatus -Status 'Done'
     })
 
-    $script:taskListBox.Add_PreviewMouseLeftButtonDown({
-        $script:taskDragStart = $_.GetPosition($script:taskListBox)
-    })
+    $script:taskListBox.AddHandler(
+        [System.Windows.Controls.Button]::ClickEvent,
+        [System.Windows.RoutedEventHandler]{
+            param($sender, $eventArgs)
 
-    $script:taskListBox.Add_MouseMove({
-        if ($_.LeftButton -ne [System.Windows.Input.MouseButtonState]::Pressed) {
-            return
-        }
-
-        if (-not $script:taskListBox.SelectedItem) {
-            return
-        }
-
-        if (-not $script:taskDragStart) {
-            return
-        }
-
-        $position = $_.GetPosition($script:taskListBox)
-        $deltaX = [Math]::Abs($position.X - $script:taskDragStart.X)
-        $deltaY = [Math]::Abs($position.Y - $script:taskDragStart.Y)
-
-        if ($deltaX -lt 4 -and $deltaY -lt 4) {
-            return
-        }
-
-        [System.Windows.DragDrop]::DoDragDrop(
-            $script:taskListBox,
-            $script:taskListBox.SelectedItem,
-            [System.Windows.DragDropEffects]::Move
-        ) | Out-Null
-    })
-
-    $script:taskListBox.Add_Drop({
-        $sourceTask = $_.Data.GetData([object])
-        if (-not $sourceTask) {
-            return
-        }
-
-        $position = $_.GetPosition($script:taskListBox)
-        $targetElement = $script:taskListBox.InputHitTest($position)
-
-        while ($targetElement -and -not ($targetElement -is [System.Windows.Controls.ListBoxItem])) {
-            $targetElement = [System.Windows.Media.VisualTreeHelper]::GetParent($targetElement)
-        }
-
-        $orderedTasks = @(Get-OrderedTasks -Tasks $script:tasks)
-        if ($orderedTasks.Count -eq 0) {
-            return
-        }
-
-        $targetIndex = $orderedTasks.Count - 1
-        if ($targetElement) {
-            $targetTask = $targetElement.DataContext
-            for ($index = 0; $index -lt $orderedTasks.Count; $index++) {
-                if ($orderedTasks[$index].id -eq $targetTask.id) {
-                    $targetIndex = $index
-                    break
-                }
+            $button = Get-ButtonFromRoutedSource -Source $eventArgs.OriginalSource
+            if (-not $button) {
+                return
             }
-        }
 
-        $script:tasks = Move-TaskItem -Tasks $script:tasks -TaskId $sourceTask.id -TargetIndex $targetIndex -Now (Get-Date)
-        Handle-TaskCollectionChanged
-    })
+            $action = [string]$button.Tag
+            if ([string]::IsNullOrWhiteSpace($action)) {
+                return
+            }
+
+            $taskId = [string]$button.CommandParameter
+            if ([string]::IsNullOrWhiteSpace($taskId)) {
+                return
+            }
+
+            Invoke-TaskMoveAction -TaskId $taskId -Action $action
+            $eventArgs.Handled = $true
+        }
+    )
 
     $script:taskWindow.Add_Closed({
         $script:taskWindow = $null
         $script:taskListBox = $null
-        $script:taskDragStart = $null
+        $script:taskInputBox = $null
     })
 
     $script:taskWindow.Show()
     $script:taskWindow.Activate() | Out-Null
+}
+
+function Get-TaskTitleSequence {
+    param(
+        [AllowNull()]
+        [object[]]$Tasks
+    )
+
+    if (-not $Tasks) {
+        return ''
+    }
+
+    (@(Get-OrderedTasks -Tasks $Tasks) | ForEach-Object { $_.title }) -join '|'
 }
 
 $mainWindowXaml = @"
@@ -674,14 +788,21 @@ Update-MainWindow
 
 if ($UiSmokeTest) {
     $taskWindowProbe = New-WpfWindowFromXaml -Xaml (Get-TaskWindowXaml)
+    $taskWindowXaml = Get-TaskWindowXaml
     [pscustomobject]@{
-        ok            = $true
-        ui_loaded     = $true
-        main_title    = $script:mainWindow.Title
-        task_title    = $taskWindowProbe.Title
-        control_probe = @(
+        ok                  = $true
+        ui_loaded           = $true
+        main_title          = $script:mainWindow.Title
+        task_title          = $taskWindowProbe.Title
+        control_probe       = @(
             [bool]$script:mainWindow.FindName('PlayButton'),
             [bool]$taskWindowProbe.FindName('TaskListBox')
+        ) -notcontains $false
+        move_button_symbols = @(
+            $taskWindowXaml.Contains('⏫'),
+            $taskWindowXaml.Contains('▲'),
+            $taskWindowXaml.Contains('▼'),
+            $taskWindowXaml.Contains('⏬')
         ) -notcontains $false
     } | ConvertTo-Json -Compress
 
@@ -690,7 +811,54 @@ if ($UiSmokeTest) {
     return
 }
 
+if ($TaskAddSmokeTest) {
+    Open-TaskWindow
+    $addTaskButtonProbe = $script:taskWindow.FindName('AddTaskButton')
+    $script:taskInputBox.Text = 'Smoke Task'
+    $addTaskButtonProbe.RaiseEvent(
+        (New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Button]::ClickEvent))
+    )
+
+    $reloadedTasks = @(Read-FocusTimerTasks -BaseDirectory $script:baseDirectory)
+
+    [pscustomobject]@{
+        ok             = $true
+        task_count     = @($script:tasks).Count
+        saved_count    = $reloadedTasks.Count
+        first_task     = if (@($script:tasks).Count -gt 0) { $script:tasks[0].title } else { $null }
+        input_cleared  = [string]::IsNullOrEmpty($script:taskInputBox.Text)
+    } | ConvertTo-Json -Compress
+
+    $script:taskWindow.Close()
+    $script:mainWindow.Close()
+    return
+}
+
+if ($TaskMoveSmokeTest) {
+    $seedTime = Get-Date '2026-03-23T10:00:00'
+    $script:tasks = @(
+        (New-TaskItem -Title 'Task A' -Order 1 -Now $seedTime -Id '1'),
+        (New-TaskItem -Title 'Task B' -Order 2 -Now $seedTime -Id '2'),
+        (New-TaskItem -Title 'Task C' -Order 3 -Now $seedTime -Id '3')
+    )
+
+    Open-TaskWindow
+    Invoke-TaskMoveAction -TaskId '3' -Action 'move_to_top'
+
+    [pscustomobject]@{
+        ok          = $true
+        order_after = Get-TaskTitleSequence -Tasks $script:tasks
+    } | ConvertTo-Json -Compress
+
+    $script:taskWindow.Close()
+    $script:mainWindow.Close()
+    return
+}
+
 [void]$script:mainWindow.ShowDialog()
+
+
+
 
 
 

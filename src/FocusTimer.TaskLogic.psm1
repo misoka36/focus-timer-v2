@@ -186,15 +186,111 @@ function Move-TaskItem {
     @($orderedTasks)
 }
 
+function Get-TaskIndex {
+    param(
+        [AllowNull()]
+        [object[]]$Tasks,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TaskId
+    )
+
+    $orderedTasks = @(Get-OrderedTasks -Tasks $Tasks)
+    for ($index = 0; $index -lt $orderedTasks.Count; $index++) {
+        if ($orderedTasks[$index].id -eq $TaskId) {
+            return $index
+        }
+    }
+
+    throw "Task not found: $TaskId"
+}
+
+function Move-TaskToTop {
+    param(
+        [AllowNull()]
+        [object[]]$Tasks,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TaskId,
+
+        [datetime]$Now = (Get-Date)
+    )
+
+    Move-TaskItem -Tasks $Tasks -TaskId $TaskId -TargetIndex 0 -Now $Now
+}
+
+function Move-TaskUp {
+    param(
+        [AllowNull()]
+        [object[]]$Tasks,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TaskId,
+
+        [datetime]$Now = (Get-Date)
+    )
+
+    $currentIndex = Get-TaskIndex -Tasks $Tasks -TaskId $TaskId
+    $targetIndex = [Math]::Max($currentIndex - 1, 0)
+    Move-TaskItem -Tasks $Tasks -TaskId $TaskId -TargetIndex $targetIndex -Now $Now
+}
+
+function Move-TaskDown {
+    param(
+        [AllowNull()]
+        [object[]]$Tasks,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TaskId,
+
+        [datetime]$Now = (Get-Date)
+    )
+
+    $orderedTasks = @(Get-OrderedTasks -Tasks $Tasks)
+    if ($orderedTasks.Count -eq 0) {
+        return @()
+    }
+
+    $currentIndex = Get-TaskIndex -Tasks $orderedTasks -TaskId $TaskId
+    $targetIndex = [Math]::Min($currentIndex + 1, $orderedTasks.Count - 1)
+    Move-TaskItem -Tasks $orderedTasks -TaskId $TaskId -TargetIndex $targetIndex -Now $Now
+}
+
+function Move-TaskToBottom {
+    param(
+        [AllowNull()]
+        [object[]]$Tasks,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TaskId,
+
+        [datetime]$Now = (Get-Date)
+    )
+
+    $orderedTasks = @(Get-OrderedTasks -Tasks $Tasks)
+    if ($orderedTasks.Count -eq 0) {
+        return @()
+    }
+
+    Move-TaskItem -Tasks $orderedTasks -TaskId $TaskId -TargetIndex ($orderedTasks.Count - 1) -Now $Now
+}
+
 Export-ModuleMember -Function @(
     'Add-TaskItem',
     'Get-OrderedTasks',
     'Get-SelectedTask',
+    'Move-TaskDown',
     'Move-TaskItem',
+    'Move-TaskToBottom',
+    'Move-TaskToTop',
+    'Move-TaskUp',
     'New-TaskItem',
     'Normalize-TaskOrder',
     'Set-TaskStatus'
 )
+
+
+
 
 
 

@@ -27,7 +27,7 @@ Describe 'FocusTimer.TaskLogic' {
         $selectedTask.id | Should Be '2'
     }
 
-    It 'moves a task to a new position and normalizes the order' {
+    It 'moves a task to the top and normalizes the order' {
         $now = Get-Date '2026-03-23T10:00:00'
         $tasks = @(
             (New-TaskItem -Title 'Task A' -Order 1 -Now $now -Id '1'),
@@ -35,12 +35,57 @@ Describe 'FocusTimer.TaskLogic' {
             (New-TaskItem -Title 'Task C' -Order 3 -Now $now -Id '3')
         )
 
-        $moved = Move-TaskItem -Tasks $tasks -TaskId '3' -TargetIndex 0 -Now $now
+        $moved = Move-TaskToTop -Tasks $tasks -TaskId '3' -Now $now
 
         $moved[0].id | Should Be '3'
         $moved[0].order | Should Be 1
         $moved[1].order | Should Be 2
         $moved[2].order | Should Be 3
+    }
+
+    It 'moves a task up by one position' {
+        $now = Get-Date '2026-03-23T10:00:00'
+        $tasks = @(
+            (New-TaskItem -Title 'Task A' -Order 1 -Now $now -Id '1'),
+            (New-TaskItem -Title 'Task B' -Order 2 -Now $now -Id '2'),
+            (New-TaskItem -Title 'Task C' -Order 3 -Now $now -Id '3')
+        )
+
+        $moved = Move-TaskUp -Tasks $tasks -TaskId '3' -Now $now
+
+        $moved[0].id | Should Be '1'
+        $moved[1].id | Should Be '3'
+        $moved[2].id | Should Be '2'
+    }
+
+    It 'moves a task down by one position' {
+        $now = Get-Date '2026-03-23T10:00:00'
+        $tasks = @(
+            (New-TaskItem -Title 'Task A' -Order 1 -Now $now -Id '1'),
+            (New-TaskItem -Title 'Task B' -Order 2 -Now $now -Id '2'),
+            (New-TaskItem -Title 'Task C' -Order 3 -Now $now -Id '3')
+        )
+
+        $moved = Move-TaskDown -Tasks $tasks -TaskId '1' -Now $now
+
+        $moved[0].id | Should Be '2'
+        $moved[1].id | Should Be '1'
+        $moved[2].id | Should Be '3'
+    }
+
+    It 'moves a task to the bottom' {
+        $now = Get-Date '2026-03-23T10:00:00'
+        $tasks = @(
+            (New-TaskItem -Title 'Task A' -Order 1 -Now $now -Id '1'),
+            (New-TaskItem -Title 'Task B' -Order 2 -Now $now -Id '2'),
+            (New-TaskItem -Title 'Task C' -Order 3 -Now $now -Id '3')
+        )
+
+        $moved = Move-TaskToBottom -Tasks $tasks -TaskId '1' -Now $now
+
+        $moved[0].id | Should Be '2'
+        $moved[1].id | Should Be '3'
+        $moved[2].id | Should Be '1'
     }
 
     It 'changes task status and updates selection' {
@@ -57,6 +102,9 @@ Describe 'FocusTimer.TaskLogic' {
         $selectedTask.id | Should Be '2'
     }
 }
+
+
+
 
 
 
