@@ -310,14 +310,14 @@ function Get-TimerUiState {
 
     [pscustomobject]@{
         CanPlay             = $State.Mode -in @('Initial', 'Paused')
-        PlayLabel           = if ($State.Mode -eq 'Paused') { '再開' } else { '再生' }
+        PlayLabel           = '▶'
         CanPause            = $State.Mode -in @('IdleRunning', 'FocusRunning', 'BreakRunning')
         CanReset            = $true
         ShowFocusChoice     = $State.Mode -eq 'IdleChoice'
         ShowIdleBreakChoice = $State.Mode -eq 'IdleChoice'
         ShowFocusBreak      = $State.Mode -eq 'FocusRunning'
-        FocusBreakLabel     = '休憩 5分'
-        IdleBreakLabel      = '休憩 1分'
+        FocusBreakLabel     = '☕'
+        IdleBreakLabel      = '☕'
     }
 }
 
@@ -370,6 +370,11 @@ Export-ModuleMember -Function @(
     'Start-FocusBreak',
     'Start-Timer'
 )
+
+
+
+
+
 
 
 

@@ -18,7 +18,8 @@
         $LASTEXITCODE | Should Be 0
         ($output -match '"ui_loaded":true') | Should Be $true
         ($output -match '"control_probe":true') | Should Be $true
-        ($output -match '"move_button_symbols":true') | Should Be $true
+        ($output -match '"clickable_symbols":true') | Should Be $true
+        ($output -match '"flat_button_styles":true') | Should Be $true
     }
 
     It 'adds a task through the task window event handler' {
@@ -50,6 +51,11 @@
         ($output -match '"order_after":"Task C\|Task A\|Task B"') | Should Be $true
     }
 }
+
+
+
+
+
 
 
 
