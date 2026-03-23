@@ -22,6 +22,8 @@
         ($output -match '"flat_button_styles":true') | Should Be $true
         ($output -match '"task_manager_layout":true') | Should Be $true
         ($output -match '"compact_main_layout":true') | Should Be $true
+        ($output -match '"compact_task_rows":true') | Should Be $true
+        ($output -match '"main_layout_structure":true') | Should Be $true
         ($output -match '"main_window_behavior":true') | Should Be $true
     }
 

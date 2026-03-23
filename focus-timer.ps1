@@ -552,10 +552,10 @@ function Get-TaskWindowXaml {
     <Style x:Key="TaskMoveButtonStyle"
            TargetType="Button"
            BasedOn="{StaticResource TaskModernIconButtonStyle}">
-      <Setter Property="Width" Value="30" />
-      <Setter Property="Height" Value="28" />
-      <Setter Property="Margin" Value="0,0,0,4" />
-      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Width" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Margin" Value="0,0,4,0" />
+      <Setter Property="FontSize" Value="11" />
       <Setter Property="Foreground" Value="#FF6C4B1F" />
       <Setter Property="Background" Value="#FFF7ECDD" />
       <Setter Property="BorderBrush" Value="#00FFFFFF" />
@@ -564,10 +564,10 @@ function Get-TaskWindowXaml {
     <Style x:Key="TaskToggleButtonStyle"
            TargetType="Button"
            BasedOn="{StaticResource TaskModernIconButtonStyle}">
-      <Setter Property="Width" Value="34" />
-      <Setter Property="Height" Value="30" />
-      <Setter Property="Margin" Value="0,0,4,4" />
-      <Setter Property="FontSize" Value="15" />
+      <Setter Property="Width" Value="28" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Margin" Value="0,0,4,0" />
+      <Setter Property="FontSize" Value="13" />
       <Setter Property="Content" Value="⏸" />
       <Setter Property="ToolTip" Value="停止" />
       <Setter Property="Foreground" Value="#FF8A5A12" />
@@ -586,10 +586,10 @@ function Get-TaskWindowXaml {
     <Style x:Key="TaskCompleteButtonStyle"
            TargetType="Button"
            BasedOn="{StaticResource TaskModernIconButtonStyle}">
-      <Setter Property="Width" Value="34" />
-      <Setter Property="Height" Value="30" />
-      <Setter Property="Margin" Value="0,0,0,4" />
-      <Setter Property="FontSize" Value="15" />
+      <Setter Property="Width" Value="28" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="FontSize" Value="13" />
       <Setter Property="Content" Value="✔" />
       <Setter Property="ToolTip" Value="完了" />
       <Setter Property="Foreground" Value="#FF1F6F43" />
@@ -601,8 +601,8 @@ function Get-TaskWindowXaml {
       <Setter Property="Background" Value="#FFFFFBF4" />
       <Setter Property="BorderBrush" Value="#FFF0E1CE" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="16" />
-      <Setter Property="Padding" Value="12" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="8,6,8,6" />
       <Style.Triggers>
         <DataTrigger Binding="{Binding is_display_target}" Value="True">
           <Setter Property="Background" Value="#FFFDF1D8" />
@@ -613,14 +613,16 @@ function Get-TaskWindowXaml {
     </Style>
 
     <Style x:Key="ActiveTaskTitleStyle" TargetType="TextBlock">
-      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="TextWrapping" Value="NoWrap" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
       <Setter Property="Foreground" Value="#FF2E2520" />
-      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontSize" Value="13" />
       <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="VerticalAlignment" Value="Center" />
       <Style.Triggers>
         <DataTrigger Binding="{Binding is_display_target}" Value="True">
           <Setter Property="Foreground" Value="#FF3A2407" />
-          <Setter Property="FontSize" Value="15" />
+          <Setter Property="FontSize" Value="14" />
           <Setter Property="FontWeight" Value="Bold" />
         </DataTrigger>
         <DataTrigger Binding="{Binding status}" Value="Stopped">
@@ -678,10 +680,10 @@ function Get-TaskWindowXaml {
         <ItemsControl x:Name="ActiveTasksItemsControl">
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <Grid Margin="0,0,0,8">
+              <Grid Margin="0,0,0,4">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="8" />
+                  <ColumnDefinition Width="6" />
                   <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
@@ -697,9 +699,9 @@ function Get-TaskWindowXaml {
                     <TextBlock Grid.Column="0"
                                Text="●"
                                Foreground="#FFD09238"
-                               FontSize="11"
+                               FontSize="9"
                                FontWeight="Bold"
-                               Margin="0,0,10,0"
+                               Margin="0,0,6,0"
                                VerticalAlignment="Center">
                       <TextBlock.Style>
                         <Style TargetType="TextBlock">
@@ -714,7 +716,7 @@ function Get-TaskWindowXaml {
                     </TextBlock>
 
                     <TextBlock Grid.Column="1"
-                               Margin="0,0,12,0"
+                               Margin="0,0,8,0"
                                Text="{Binding title}"
                                Style="{StaticResource ActiveTaskTitleStyle}" />
 
@@ -731,9 +733,10 @@ function Get-TaskWindowXaml {
                   </Grid>
                 </Border>
 
-                <StackPanel x:Name="PriorityButtonsHost"
-                            Grid.Column="2"
-                            VerticalAlignment="Center">
+                <WrapPanel x:Name="PriorityButtonsHost"
+                           Grid.Column="2"
+                           Orientation="Horizontal"
+                           VerticalAlignment="Center">
                   <Button Tag="move_to_top"
                           CommandParameter="{Binding id}"
                           Content="⏫"
@@ -754,7 +757,7 @@ function Get-TaskWindowXaml {
                           Content="⏬"
                           ToolTip="一番下へ"
                           Style="{StaticResource TaskMoveButtonStyle}" />
-                </StackPanel>
+                </WrapPanel>
               </Grid>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -874,8 +877,8 @@ function Get-TaskTitleSequence {
 $mainWindowXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Width="368"
-        Height="154"
+        Width="342"
+        Height="136"
         ShowInTaskbar="False"
         Topmost="True"
         AllowsTransparency="True"
@@ -926,13 +929,22 @@ $mainWindowXaml = @"
     </Style>
   </Window.Resources>
   <Grid Margin="9">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="6" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="Auto" />
       <ColumnDefinition Width="8" />
       <ColumnDefinition Width="*" />
     </Grid.ColumnDefinitions>
 
-    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+    <Grid Grid.Row="0"
+          Grid.Column="0"
+          Width="60"
+          Height="60"
+          VerticalAlignment="Center">
       <Grid Width="60" Height="60">
         <Ellipse Stroke="#33FFFFFF" StrokeThickness="6" />
         <Ellipse x:Name="MeterFullCircle" StrokeThickness="6" Visibility="Collapsed" />
@@ -949,51 +961,11 @@ $mainWindowXaml = @"
                    FontWeight="Bold"
                    Text="00:00" />
       </Grid>
+    </Grid>
 
-      <WrapPanel Margin="0,8,0,0" HorizontalAlignment="Center">
-        <Button x:Name="PlayButton"
-                Content="▶"
-                ToolTip="再生"
-                Background="#2F2DBA81"
-                BorderBrush="#002DBA81"
-                Style="{StaticResource FloatingFlatButtonStyle}" />
-        <Button x:Name="PauseButton"
-                Content="⏸"
-                ToolTip="一時停止"
-                Background="#2F617083"
-                BorderBrush="#00617083"
-                Style="{StaticResource FloatingFlatButtonStyle}" />
-        <Button x:Name="ResetButton"
-                Content="↺"
-                ToolTip="リセット"
-                Background="#2FC8666A"
-                BorderBrush="#00C8666A"
-                Style="{StaticResource FloatingFlatButtonStyle}" />
-        <Button x:Name="FocusChoiceButton"
-                Content="🎯"
-                ToolTip="focus"
-                Background="#2FC7993D"
-                BorderBrush="#00C7993D"
-                Visibility="Collapsed"
-                Style="{StaticResource FloatingFlatButtonStyle}" />
-        <Button x:Name="IdleBreakChoiceButton"
-                Content="☕"
-                ToolTip="1分休憩"
-                Background="#2FD88952"
-                BorderBrush="#00D88952"
-                Visibility="Collapsed"
-                Style="{StaticResource FloatingFlatButtonStyle}" />
-        <Button x:Name="FocusBreakButton"
-                Content="☕"
-                ToolTip="5分休憩"
-                Background="#2FC47654"
-                BorderBrush="#00C47654"
-                Visibility="Collapsed"
-                Style="{StaticResource FloatingFlatButtonStyle}" />
-      </WrapPanel>
-    </StackPanel>
-
-    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+    <Grid Grid.Row="0"
+          Grid.Column="2"
+          VerticalAlignment="Center">
       <Border Background="#D91E293B" CornerRadius="16" Padding="10">
         <Grid>
           <Grid.ColumnDefinitions>
@@ -1020,7 +992,51 @@ $mainWindowXaml = @"
                   Style="{StaticResource FloatingFlatButtonStyle}" />
         </Grid>
       </Border>
-    </StackPanel>
+    </Grid>
+
+    <WrapPanel Grid.Row="2"
+               Grid.ColumnSpan="3"
+               HorizontalAlignment="Center">
+      <Button x:Name="PlayButton"
+              Content="▶"
+              ToolTip="再生"
+              Background="#2F2DBA81"
+              BorderBrush="#002DBA81"
+              Style="{StaticResource FloatingFlatButtonStyle}" />
+      <Button x:Name="PauseButton"
+              Content="⏸"
+              ToolTip="一時停止"
+              Background="#2F617083"
+              BorderBrush="#00617083"
+              Style="{StaticResource FloatingFlatButtonStyle}" />
+      <Button x:Name="ResetButton"
+              Content="↺"
+              ToolTip="リセット"
+              Background="#2FC8666A"
+              BorderBrush="#00C8666A"
+              Style="{StaticResource FloatingFlatButtonStyle}" />
+      <Button x:Name="FocusChoiceButton"
+              Content="🎯"
+              ToolTip="focus"
+              Background="#2FC7993D"
+              BorderBrush="#00C7993D"
+              Visibility="Collapsed"
+              Style="{StaticResource FloatingFlatButtonStyle}" />
+      <Button x:Name="IdleBreakChoiceButton"
+              Content="☕"
+              ToolTip="1分休憩"
+              Background="#2FD88952"
+              BorderBrush="#00D88952"
+              Visibility="Collapsed"
+              Style="{StaticResource FloatingFlatButtonStyle}" />
+      <Button x:Name="FocusBreakButton"
+              Content="☕"
+              ToolTip="5分休憩"
+              Background="#2FC47654"
+              BorderBrush="#00C47654"
+              Visibility="Collapsed"
+              Style="{StaticResource FloatingFlatButtonStyle}" />
+    </WrapPanel>
   </Grid>
 </Window>
 "@
@@ -1152,10 +1168,23 @@ if ($UiSmokeTest) {
             $taskWindowXaml.Contains('is_display_target')
         ) -notcontains $false
         compact_main_layout = @(
-            $mainWindowXaml.Contains('Width="368"'),
-            $mainWindowXaml.Contains('Height="154"'),
+            $mainWindowXaml.Contains('Width="342"'),
+            $mainWindowXaml.Contains('Height="136"'),
             $mainWindowXaml.Contains('FontSize="12"'),
             $mainWindowXaml.Contains('Width="196"')
+        ) -notcontains $false
+        compact_task_rows = @(
+            $taskWindowXaml.Contains('Property="TextWrapping" Value="NoWrap"'),
+            $taskWindowXaml.Contains('Property="TextTrimming" Value="CharacterEllipsis"'),
+            $taskWindowXaml.Contains('Property="Width" Value="24"'),
+            $taskWindowXaml.Contains('Property="Height" Value="24"'),
+            $taskWindowXaml.Contains('Property="Padding" Value="8,6,8,6"')
+        ) -notcontains $false
+        main_layout_structure = @(
+            $mainWindowXaml.Contains('<Grid.RowDefinitions>'),
+            $mainWindowXaml.Contains('Grid.Row="0"'),
+            $mainWindowXaml.Contains('Grid.Row="2"'),
+            $mainWindowXaml.Contains('Grid.ColumnSpan="3"')
         ) -notcontains $false
         main_window_behavior = @(
             $script:mainWindowDragEnabled,
