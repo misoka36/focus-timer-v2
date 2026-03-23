@@ -28,6 +28,20 @@ Describe 'FocusTimer.TaskLogic' {
         $updated[2].title | Should Be 'Task Done'
     }
 
+    It 'adds a new task right below the displayed task' {
+        $now = Get-Date '2026-03-23T10:00:00'
+        $tasks = @(
+            (New-TaskItem -Title 'Stopped Task' -Order 1 -Status Stopped -Now $now -Id '1'),
+            (New-TaskItem -Title 'Task A' -Order 2 -Status Normal -Now $now -Id '2'),
+            (New-TaskItem -Title 'Task B' -Order 3 -Status Normal -Now $now -Id '3'),
+            (New-TaskItem -Title 'Task Done' -Order 4 -Status Done -Now $now -Id '4')
+        )
+
+        $updated = Add-TaskItem -Tasks $tasks -Title 'Task C' -Now $now
+
+        (@($updated) | ForEach-Object { $_.title }) -join '|' | Should Be 'Task A|Task C|Task B|Stopped Task|Task Done'
+    }
+
     It 'selects the topmost normal task only' {
         $now = Get-Date '2026-03-23T10:00:00'
         $tasks = @(
@@ -39,6 +53,19 @@ Describe 'FocusTimer.TaskLogic' {
         $selectedTask = Get-SelectedTask -Tasks $tasks
 
         $selectedTask.id | Should Be '2'
+    }
+
+    It 'keeps the displayed task at the top of active tasks' {
+        $now = Get-Date '2026-03-23T10:00:00'
+        $tasks = @(
+            (New-TaskItem -Title 'Stopped Task' -Order 1 -Status Stopped -Now $now -Id '1'),
+            (New-TaskItem -Title 'Task A' -Order 2 -Status Normal -Now $now -Id '2'),
+            (New-TaskItem -Title 'Task B' -Order 3 -Status Normal -Now $now -Id '3')
+        )
+
+        $activeTasks = @(Get-ActiveTasks -Tasks $tasks)
+
+        ($activeTasks | ForEach-Object { $_.title }) -join '|' | Should Be 'Task A|Task B|Stopped Task'
     }
 
     It 'moves a task to the top and normalizes the order' {

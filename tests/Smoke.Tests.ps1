@@ -21,6 +21,8 @@
         ($output -match '"clickable_symbols":true') | Should Be $true
         ($output -match '"flat_button_styles":true') | Should Be $true
         ($output -match '"task_manager_layout":true') | Should Be $true
+        ($output -match '"compact_main_layout":true') | Should Be $true
+        ($output -match '"main_window_behavior":true') | Should Be $true
     }
 
     It 'adds a task through the task window event handler' {

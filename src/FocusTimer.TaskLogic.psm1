@@ -36,9 +36,10 @@ function Normalize-TaskOrder {
     )
 
     $orderedTasks = @(Get-OrderedTasks -Tasks $Tasks)
-    $activeTasks = @($orderedTasks | Where-Object { $_.status -ne 'Done' })
+    $normalTasks = @($orderedTasks | Where-Object { $_.status -eq 'Normal' })
+    $stoppedTasks = @($orderedTasks | Where-Object { $_.status -eq 'Stopped' })
     $completedTasks = @($orderedTasks | Where-Object { $_.status -eq 'Done' })
-    $normalizedTasks = @($activeTasks + $completedTasks)
+    $normalizedTasks = @($normalTasks + $stoppedTasks + $completedTasks)
 
     for ($index = 0; $index -lt $normalizedTasks.Count; $index++) {
         $normalizedTasks[$index].order = $index + 1
@@ -87,11 +88,26 @@ function Add-TaskItem {
         [datetime]$Now = (Get-Date)
     )
 
-    $currentTasks = @(Get-OrderedTasks -Tasks $Tasks)
-    $activeTasks = @($currentTasks | Where-Object { $_.status -ne 'Done' })
+    $currentTasks = @(Normalize-TaskOrder -Tasks $Tasks)
+    $normalTasks = @($currentTasks | Where-Object { $_.status -eq 'Normal' })
+    $stoppedTasks = @($currentTasks | Where-Object { $_.status -eq 'Stopped' })
     $completedTasks = @($currentTasks | Where-Object { $_.status -eq 'Done' })
-    $newTask = New-TaskItem -Title $Title -Order ($activeTasks.Count + 1) -Now $Now
-    @(Normalize-TaskOrder -Tasks (@($activeTasks) + $newTask + $completedTasks))
+    $newTask = New-TaskItem -Title $Title -Order ($currentTasks.Count + 1) -Now $Now
+
+    $activeTasks = if ($normalTasks.Count -gt 0) {
+        @($normalTasks[0]) + $newTask + @($normalTasks | Select-Object -Skip 1) + $stoppedTasks
+    }
+    else {
+        @($newTask) + $stoppedTasks
+    }
+
+    $mergedTasks = @($activeTasks) + $completedTasks
+    for ($index = 0; $index -lt $mergedTasks.Count; $index++) {
+        $mergedTasks[$index].order = $index + 1
+        $mergedTasks[$index].updated_at = $Now
+    }
+
+    @(Normalize-TaskOrder -Tasks $mergedTasks)
 }
 
 function Get-ActiveTasks {
@@ -100,7 +116,7 @@ function Get-ActiveTasks {
         [object[]]$Tasks
     )
 
-    @(Get-OrderedTasks -Tasks $Tasks | Where-Object { $_.status -ne 'Done' })
+    @(Normalize-TaskOrder -Tasks $Tasks | Where-Object { $_.status -ne 'Done' })
 }
 
 function Get-CompletedTasks {
@@ -109,7 +125,7 @@ function Get-CompletedTasks {
         [object[]]$Tasks
     )
 
-    @(Get-OrderedTasks -Tasks $Tasks | Where-Object { $_.status -eq 'Done' })
+    @(Normalize-TaskOrder -Tasks $Tasks | Where-Object { $_.status -eq 'Done' })
 }
 
 function Get-SelectedTask {
@@ -118,7 +134,7 @@ function Get-SelectedTask {
         [object[]]$Tasks
     )
 
-    Get-OrderedTasks -Tasks $Tasks | Where-Object { $_.status -eq 'Normal' } | Select-Object -First 1
+    Get-ActiveTasks -Tasks $Tasks | Where-Object { $_.status -eq 'Normal' } | Select-Object -First 1
 }
 
 function Set-TaskStatus {
@@ -233,7 +249,7 @@ function Get-TaskIndex {
         [string]$TaskId
     )
 
-    $orderedTasks = @(Get-OrderedTasks -Tasks $Tasks)
+    $orderedTasks = @(Get-ActiveTasks -Tasks $Tasks)
     for ($index = 0; $index -lt $orderedTasks.Count; $index++) {
         if ($orderedTasks[$index].id -eq $TaskId) {
             return $index
@@ -284,14 +300,14 @@ function Move-TaskDown {
         [datetime]$Now = (Get-Date)
     )
 
-    $orderedTasks = @(Get-OrderedTasks -Tasks $Tasks)
-    if ($orderedTasks.Count -eq 0) {
+    $activeTasks = @(Get-ActiveTasks -Tasks $Tasks)
+    if ($activeTasks.Count -eq 0) {
         return @()
     }
 
-    $currentIndex = Get-TaskIndex -Tasks $orderedTasks -TaskId $TaskId
-    $targetIndex = [Math]::Min($currentIndex + 1, $orderedTasks.Count - 1)
-    Move-TaskItem -Tasks $orderedTasks -TaskId $TaskId -TargetIndex $targetIndex -Now $Now
+    $currentIndex = Get-TaskIndex -Tasks $activeTasks -TaskId $TaskId
+    $targetIndex = [Math]::Min($currentIndex + 1, $activeTasks.Count - 1)
+    Move-TaskItem -Tasks $Tasks -TaskId $TaskId -TargetIndex $targetIndex -Now $Now
 }
 
 function Move-TaskToBottom {
@@ -305,12 +321,12 @@ function Move-TaskToBottom {
         [datetime]$Now = (Get-Date)
     )
 
-    $orderedTasks = @(Get-OrderedTasks -Tasks $Tasks)
-    if ($orderedTasks.Count -eq 0) {
+    $activeTasks = @(Get-ActiveTasks -Tasks $Tasks)
+    if ($activeTasks.Count -eq 0) {
         return @()
     }
 
-    Move-TaskItem -Tasks $orderedTasks -TaskId $TaskId -TargetIndex ($orderedTasks.Count - 1) -Now $Now
+    Move-TaskItem -Tasks $Tasks -TaskId $TaskId -TargetIndex ($activeTasks.Count - 1) -Now $Now
 }
 
 function Toggle-TaskStopped {
