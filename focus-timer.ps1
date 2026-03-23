@@ -89,9 +89,9 @@ function Get-ArcGeometryData {
         [Parameter(Mandatory = $true)]
         [double]$Progress,
 
-        [double]$CanvasSize = 60,
+        [double]$CanvasSize = 48,
 
-        [double]$Padding = 6
+        [double]$Padding = 5
     )
 
     if ($Progress -le 0) {
@@ -877,8 +877,8 @@ function Get-TaskTitleSequence {
 $mainWindowXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Width="342"
-        Height="136"
+        Width="326"
+        Height="124"
         ShowInTaskbar="False"
         Topmost="True"
         AllowsTransparency="True"
@@ -931,25 +931,26 @@ $mainWindowXaml = @"
   <Grid Margin="9">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
-      <RowDefinition Height="6" />
+      <RowDefinition Height="5" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="Auto" />
-      <ColumnDefinition Width="8" />
-      <ColumnDefinition Width="*" />
-    </Grid.ColumnDefinitions>
 
-    <Grid Grid.Row="0"
-          Grid.Column="0"
-          Width="60"
-          Height="60"
-          VerticalAlignment="Center">
-      <Grid Width="60" Height="60">
-        <Ellipse Stroke="#33FFFFFF" StrokeThickness="6" />
-        <Ellipse x:Name="MeterFullCircle" StrokeThickness="6" Visibility="Collapsed" />
+    <Grid x:Name="MainTopRow"
+          Grid.Row="0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="8" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+
+      <Grid Grid.Column="0"
+            Width="48"
+            Height="48"
+            VerticalAlignment="Center">
+        <Ellipse Stroke="#33FFFFFF" StrokeThickness="5" />
+        <Ellipse x:Name="MeterFullCircle" StrokeThickness="5" Visibility="Collapsed" />
         <Path x:Name="MeterArc"
-              StrokeThickness="6"
+              StrokeThickness="5"
               StrokeStartLineCap="Round"
               StrokeEndLineCap="Round"
               Visibility="Collapsed" />
@@ -957,45 +958,43 @@ $mainWindowXaml = @"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"
                    Foreground="White"
-                   FontSize="12"
+                   FontSize="10"
                    FontWeight="Bold"
                    Text="00:00" />
       </Grid>
-    </Grid>
 
-    <Grid Grid.Row="0"
-          Grid.Column="2"
-          VerticalAlignment="Center">
-      <Border Background="#D91E293B" CornerRadius="16" Padding="10">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
+      <Grid Grid.Column="2"
+            VerticalAlignment="Center">
+        <Border Background="#D91E293B" CornerRadius="14" Padding="8">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-          <TextBlock x:Name="TaskText"
-                     Grid.Column="0"
-                     Text="表示対象のタスクはありません"
-                     Foreground="White"
-                     FontSize="12"
-                     Width="196"
-                     VerticalAlignment="Center"
-                     Margin="0,0,8,0"
-                     TextWrapping="Wrap" />
+            <TextBlock x:Name="TaskText"
+                       Grid.Column="0"
+                       Text="表示対象のタスクはありません"
+                       Foreground="White"
+                       FontSize="11"
+                       Width="188"
+                       VerticalAlignment="Center"
+                       Margin="0,0,6,0"
+                       TextWrapping="Wrap" />
 
-          <Button x:Name="OpenTasksButton"
-                  Grid.Column="1"
-                  Content="☰"
-                  ToolTip="タスク管理"
-                  Background="#2F4B7ED1"
-                  BorderBrush="#004B7ED1"
-                  Style="{StaticResource FloatingFlatButtonStyle}" />
-        </Grid>
-      </Border>
+            <Button x:Name="OpenTasksButton"
+                    Grid.Column="1"
+                    Content="☰"
+                    ToolTip="タスク管理"
+                    Background="#2F4B7ED1"
+                    BorderBrush="#004B7ED1"
+                    Style="{StaticResource FloatingFlatButtonStyle}" />
+          </Grid>
+        </Border>
+      </Grid>
     </Grid>
 
     <WrapPanel Grid.Row="2"
-               Grid.ColumnSpan="3"
                HorizontalAlignment="Center">
       <Button x:Name="PlayButton"
               Content="▶"
@@ -1168,10 +1167,11 @@ if ($UiSmokeTest) {
             $taskWindowXaml.Contains('is_display_target')
         ) -notcontains $false
         compact_main_layout = @(
-            $mainWindowXaml.Contains('Width="342"'),
-            $mainWindowXaml.Contains('Height="136"'),
-            $mainWindowXaml.Contains('FontSize="12"'),
-            $mainWindowXaml.Contains('Width="196"')
+            $mainWindowXaml.Contains('Width="326"'),
+            $mainWindowXaml.Contains('Height="124"'),
+            $mainWindowXaml.Contains('Width="48"'),
+            $mainWindowXaml.Contains('FontSize="10"'),
+            $mainWindowXaml.Contains('Width="188"')
         ) -notcontains $false
         compact_task_rows = @(
             $taskWindowXaml.Contains('Property="TextWrapping" Value="NoWrap"'),
@@ -1182,9 +1182,9 @@ if ($UiSmokeTest) {
         ) -notcontains $false
         main_layout_structure = @(
             $mainWindowXaml.Contains('<Grid.RowDefinitions>'),
-            $mainWindowXaml.Contains('Grid.Row="0"'),
+            $mainWindowXaml.Contains('x:Name="MainTopRow"'),
             $mainWindowXaml.Contains('Grid.Row="2"'),
-            $mainWindowXaml.Contains('Grid.ColumnSpan="3"')
+            $mainWindowXaml.Contains('Grid.Column="2"')
         ) -notcontains $false
         main_window_behavior = @(
             $script:mainWindowDragEnabled,
